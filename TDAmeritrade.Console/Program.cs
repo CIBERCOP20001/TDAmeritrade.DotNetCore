@@ -91,8 +91,8 @@ namespace TDConsole
             //var currentSymbol = "SPY_062623C432";
 
             TimeSpan startTradeTime = TimeSpan.Parse("08:30:00");
-            TimeSpan endTradeTime = TimeSpan.Parse("15:00:00");
-            TimeSpan lasMinuteTrade = TimeSpan.Parse("14:59:00");
+            TimeSpan endTradeTime = TimeSpan.Parse("15:01:00");
+            TimeSpan lasMinuteTrade = TimeSpan.Parse("15:00:00");
             TimeSpan timeNow = DateTime.Now.TimeOfDay;
 
             await client.SignIn();
