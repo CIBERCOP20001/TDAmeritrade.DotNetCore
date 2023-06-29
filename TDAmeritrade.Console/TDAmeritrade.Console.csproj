@@ -7,7 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.0.143" />
     <PackageReference Include="FlatSharp" Version="5.2.1" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.1" />
+    <PackageReference Include="Skender.Stock.Indicators" Version="3.0.0-preview1014-0012" />
   </ItemGroup>
 
   <ItemGroup>

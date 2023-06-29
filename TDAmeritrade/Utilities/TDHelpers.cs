@@ -43,6 +43,13 @@ namespace TDAmeritrade
             return TimeZoneInfo.ConvertTimeFromUtc(timeUtc, easternZone);
         }
 
+        public static DateTime ToCST(this DateTime time)
+        {
+            var timeUtc = time.ToUniversalTime();
+            TimeZoneInfo centralUSZone = TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
+            return TimeZoneInfo.ConvertTimeFromUtc(timeUtc, centralUSZone);
+        }
+
         public static DateTime ToRegularTradingStart(this DateTime time)
         {
             return ToEST(time).Date.AddHours(9).AddMinutes(30);

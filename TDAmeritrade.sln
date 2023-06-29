@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.31205.134
+# Visual Studio Version 17
+VisualStudioVersion = 17.7.33711.374
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TDAmeritrade.Console", "TDAmeritrade.Console\TDAmeritrade.Console.csproj", "{6B4686F9-E24C-422E-8719-14C8C379E275}"
 EndProject
@@ -12,6 +12,8 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TDAmeritrade.Web", "TDAmeritrade.Web\TDAmeritrade.Web.csproj", "{C25F8E19-E248-43BD-AE08-847A2997CFA2}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TDAmeritrade.DataProtection", "TDAmeritrade.DataProtection\TDAmeritrade.DataProtection.csproj", "{0B3196C6-DD40-42AF-AED8-BA22B6B65368}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TDAmeritrade.StoreChartData", "TDAmeritrade.StoreChartData\TDAmeritrade.StoreChartData.csproj", "{183CEA2E-57E9-4FA3-9C83-ABEFDF9F49EC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -39,6 +41,10 @@ Global
 		{0B3196C6-DD40-42AF-AED8-BA22B6B65368}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0B3196C6-DD40-42AF-AED8-BA22B6B65368}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0B3196C6-DD40-42AF-AED8-BA22B6B65368}.Release|Any CPU.Build.0 = Release|Any CPU
+		{183CEA2E-57E9-4FA3-9C83-ABEFDF9F49EC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{183CEA2E-57E9-4FA3-9C83-ABEFDF9F49EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{183CEA2E-57E9-4FA3-9C83-ABEFDF9F49EC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{183CEA2E-57E9-4FA3-9C83-ABEFDF9F49EC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
