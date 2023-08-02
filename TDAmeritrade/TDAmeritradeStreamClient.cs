@@ -587,5 +587,25 @@ namespace TDAmeritrade
             }
             IsConnected = false;
         }
+
+        private int ttmZqueeze()
+        {
+            //input Num_Dev_up = 2.0;
+            //input length = 20;
+            //input factorhigh = 1.0;
+
+            //sDev = StDev(data = price[-displace], length = length);
+            //shifthigh = factorhigh * MovingAverage(trueRangeAverageType, TrueRange(high, close, low), length);
+            //input displace = 0;
+            //input averageType = AverageType.SIMPLE;
+            //MidLineBB = MovingAverage(averageType, data = price[-displace], length = length);
+            //UpperBandBB = MidLineBB + Num_Dev_up * sDev;
+            //LowerBandBB = MidLineBB + Num_Dev_Dn * sDev;
+            //LowerBandBB = MidLineBB + Num_Dev_Dn * sDev;
+            //LowerBandKCHigh = average[-displace] - shifthigh[-displace];
+            //ExtrSqueezein = LowerBandBB > LowerBandKCHigh and UpperBandBB<UpperBandKCHigh and lowerbandbb> lowerbandbb[1];
+
+            return 0;
+        }
     }
 }
