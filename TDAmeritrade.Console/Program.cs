@@ -43,6 +43,11 @@ namespace TDConsole
         IList<Quote> quotes;
         TradingParams tradingParams = new TradingParams();
         private decimal decimalprice;
+        bool callComprada = false;
+        bool putComprada = false;
+        bool justLeavingSqueeze = false;
+        int lastCrossOver = 0;
+        double prevLowerBandBB = 0d;
 
         public Program()
         {
@@ -251,10 +256,7 @@ namespace TDConsole
 
             };
 
-            //var bBandPreviousWidth = decimal.Round((decimal)quotes.GetBollingerBands().LastOrDefault().Width, 9);
 
-            //var res1 = quotes.GetBollingerBands();
-            //IEnumerable<PivotsResult> results = quotes.GetPivots(2, 2, 20, EndType.HighLow);
 
             using (var socket = new TDAmeritradeStreamClient(client))
             {
@@ -339,16 +341,11 @@ namespace TDConsole
 
                     try
                     {
-                        //    if (m.Contains("BOOK"))
-                        //    {
-                        //        var optionData = JsonConvert.DeserializeObject<>(m);
-                        //        return;
-                        //    }
-
                         var res = JsonConvert.DeserializeObject<Rootobject>(m);
 
                         if (res.data != null && m.Contains("CHART_EQUITY"))
                         {
+                            //var r = GetCallOptionChainAsync().GetAwaiter().GetResult();
                             //Console.WriteLine(m);
                             var values = res.data[0].content[0];
 
@@ -374,6 +371,7 @@ namespace TDConsole
 
                             IEnumerable<EmaResult> ema8 = quotes.GetEma(8);
                             IEnumerable<EmaResult> ema13 = quotes.GetEma(13);
+                            IEnumerable<RsiResult> rSi = quotes.GetRsi(14);
 
                             timeNow = DateTime.Now.TimeOfDay;
 
@@ -381,34 +379,31 @@ namespace TDConsole
                             if (timeNow <= startTradeTime || timeNow >= endTradeTime) return;
 
                             //If EMAS are not ready then return
+                            Console.WriteLine("Validating EMAS");
                             if (ema8.Last().Ema == null || ema13.Last().Ema == null) return;
-
-                            //IEnumerable<BollingerBandsResult> bBands = quotes.GetBollingerBands();
-                            //IEnumerable<PivotsResult> pivots = quotes.GetPivots(2, 2, 20, EndType.HighLow);
 
                             var ema8Val = decimal.Round((decimal)ema8.LastOrDefault().Ema, 2);
                             var ema13Val = decimal.Round((decimal)ema13.LastOrDefault().Ema, 2);
 
+                            var ema8ValPrev = decimal.Round((decimal)ema8.ToList()[ema8.ToList().Count - 2].Ema, 2);
+                            var ema13ValPrev = decimal.Round((decimal)ema13.ToList()[ema13.ToList().Count - 2].Ema, 2);
+
+                            var squeezeInfo = IsInSqueeze(quotes);
+
+                            var chopiness = Choppiness(quotes);
+
                             var ema8dif = decimal.Subtract(ema8Val, ema13Val);
                             var ema13dif = decimal.Subtract(ema13Val, ema8Val);
 
-                            //var bBandWidth = decimal.Round((decimal)bBands.LastOrDefault().Width, 9);
 
                             Console.WriteLine("---------------------------------");
-                            Console.WriteLine(DateTime.Now.ToString());
-                            //if (bBandWidth < tradingParams.BBandRedValue)
-                            //{ BBandRedCount++; }
-                            //else { BBandRedCount = 0; }
+                            Console.WriteLine(quotes.Last().Date.ToString());
+
 
                             if (ema8dif >= 0)
                             { Console.WriteLine($"EMA8 ${ema8Val} >= EMA13 {ema13Val} Bullish"); }
                             else if (ema13dif >= 0)
                             { Console.WriteLine($"EMA13 ${ema13Val} >= SMA8 {ema8Val} Bearish"); }
-
-                            //Console.WriteLine($"BollingerBand Width {bBandWidth} in squeeze =  ({bBandWidth < tradingParams.BBandRedValue}) RED Cont: {BBandRedCount}");
-
-                            //Console.WriteLine($"HighLine : {pivots.ToList()[pivots.ToList().Count - 4].HighLine?.ToString()} | HighPoint : {pivots.ToList()[pivots.ToList().Count - 4].HighPoint?.ToString()}");
-                            //Console.WriteLine($"LowLine : {pivots.ToList()[pivots.ToList().Count - 4].LowLine?.ToString()} | LowPoint : {pivots.ToList()[pivots.ToList().Count - 4].LowPoint?.ToString()}");
 
                             var currentOrderTraded = string.Empty;
                             try
@@ -427,42 +422,16 @@ namespace TDConsole
                                 }
                             }
 
-                            ////IF BETWEEN 8:30 AND 8:40 AM CST AND DIFFERENCE BETWEEND EMAS IS LESS THAN .05 NOT BUY
-                            //if (timeNow <= TimeSpan.Parse("08:40:00"))
-                            ////No trade set yet // at the begin of the trade day
-                            //{
-                            //    if (string.IsNullOrEmpty(currentOrderTraded))
-                            //    {
-                            //        if (ema8Val > ema13Val && ema8dif >= .05m)
-                            //        {
-                            //            //Get option Chain
-                            //            var symbol = GetCallOptionChainAsync().GetAwaiter().GetResult();
-                            //            Console.WriteLine("buy call " + symbol);
-
-                            //            //Buy a call
-                            //            var placed = await PlaceOrderAsync(symbol, "CALL", "BUY_TO_OPEN", bBandWidth);
-                            //        }
-                            //        else if (ema13Val > ema8Val && ema13dif >= .05m)
-                            //        {
-                            //            //Get option Chain
-                            //            var symbol = GetPutOptionChainAsync().GetAwaiter().GetResult();
-                            //            Console.WriteLine("buy put " + symbol);
-                            //            //Buy a Put
-                            //            var placed = await PlaceOrderAsync(symbol, "PUT", "BUY_TO_OPEN", bBandWidth);
-                            //        }
-                            //        return;
-                            //    }
-                            //}
-
                             if (string.IsNullOrEmpty(currentOrderTraded))
                             {
-                                putCall = string.Empty;
-                                currentSymbol = string.Empty;
+                                callComprada = false;
+                                putComprada = false;
                             }
                             else
                             {
                                 currentSymbol = currentOrderTraded;
-                                putCall = currentSymbol.Contains("C") ? "Call" : "Put";
+                                callComprada = currentSymbol.Contains("C") ? true : false;
+                                putComprada = currentSymbol.Contains("P") ? true : false;
                             };
 
                             if (timeNow >= lasMinuteTrade) // Last minute to sell everything
@@ -470,99 +439,174 @@ namespace TDConsole
                                 if (!string.IsNullOrEmpty(currentSymbol))
                                 {
                                     if (putCall == "Call")
-                                    { _ = await PlaceOrderAsync(currentSymbol, "CALL", "SELL_TO_CLOSE"); }
+                                    {
+                                        var orderPlaced = await PlaceOrderAsync(currentSymbol, true, "SELL_TO_CLOSE");
+                                        if (orderPlaced)
+                                        {
+                                            callComprada = false;
+                                        }
+                                    }
                                     else
-                                    { _ = await PlaceOrderAsync(currentSymbol, "PUT", "SELL_TO_CLOSE"); }
+                                    {
+                                        var orderPlaced = await PlaceOrderAsync(currentSymbol, false, "SELL_TO_CLOSE");
+                                        if (orderPlaced)
+                                        {
+                                            putComprada = false;
+                                        }
+                                    }
                                 }
                                 return;
                             }
 
-                            if (string.IsNullOrEmpty(putCall))
+                            if (callComprada)
                             {
-                                var buySignal = string.Empty;
-                                if (tradingParams.UseBBandToBuy)
+                                if ((ema8Val < ema13Val)
+                                        && (ema8ValPrev >= ema13ValPrev))
                                 {
-                                    //if (bBandWidth < tradingParams.BBandRedValue) return;
-
-                                    if (ema8dif > 0)
-                                    { buySignal = "Call"; }
-                                    else if (ema13dif > 0)
-                                    { buySignal = "Put"; }
-                                }
-                                else
-                                {
-                                    var ema8ValPrev = decimal.Round((decimal)ema8.ToList()[ema8.ToList().Count - 2].Ema, 2);
-                                    var ema13ValPrev = decimal.Round((decimal)ema13.ToList()[ema13.ToList().Count - 2].Ema, 2);
-
-                                    Console.WriteLine($"Prev EMAs were EMA8 ${ema8ValPrev} EMA13 ${ema13ValPrev}");
-                                    if (ema8ValPrev >= ema13ValPrev && ema13Val > ema8Val)
-                                    {
-                                        buySignal = "Put";
-                                    }
-                                    else if (ema13ValPrev >= ema8ValPrev && ema8Val > ema13Val)
-                                    {
-                                        buySignal = "Call";
-                                    }
-                                }
-
-                                if (buySignal == "Put")
-                                {
-                                    var symbol = GetPutOptionChainAsync().GetAwaiter().GetResult();
-                                    Console.WriteLine("<<<<<< BUY PUT " + symbol);
-
-                                    //_ = await PlaceOrderAsync(symbol, "PUT", "BUY_TO_OPEN", bBandWidth);
-                                }
-                                else if (buySignal == "Call")
-                                {
-                                    //Get option Chain
-                                    var symbol = GetCallOptionChainAsync().GetAwaiter().GetResult();
-                                    Console.WriteLine("<<<<<<< BUY CALL" + symbol);
-
-                                    //Buy a call
-                                    //_ = await PlaceOrderAsync(symbol, "CALL", "BUY_TO_OPEN", bBandWidth);
-                                }
-                            }
-                            else if (putCall == "Call") //If the current trade is a CALL
-                            {
-                                if (ema13Val > ema8Val)
-                                {
+                                    lastCrossOver = 0;
                                     //Sell the call
                                     if (!string.IsNullOrEmpty(currentSymbol))
                                     {
-                                        _ = await PlaceOrderAsync(currentSymbol, "CALL", "SELL_TO_CLOSE");
+                                        var orderPlaced = await PlaceOrderAsync(currentSymbol, true, "SELL_TO_CLOSE");
                                         Console.WriteLine("<<<<<< SELL CALL " + currentSymbol);
+                                        if (orderPlaced)
+                                        {
+                                            callComprada = false;
+                                        }
                                     }
 
-
-                                    //Get option Chain
-                                    var symbol = GetPutOptionChainAsync().GetAwaiter().GetResult();
-                                    Console.WriteLine(">>>>>> BUY PUT " + symbol);
-
-                                    //_ = await PlaceOrderAsync(symbol, "PUT", "BUY_TO_OPEN", bBandWidth);
                                 }
                             }
-                            else if (putCall == "Put")//If the current trade is a PUT
+
+                            if (putComprada)
                             {
-                                if (ema8Val > ema13Val)
+                                if ((ema8Val > ema13Val)
+                                        && (ema8ValPrev <= ema13ValPrev))
                                 {
+                                    lastCrossOver = 0;
                                     //Sell the put
                                     if (!string.IsNullOrEmpty(currentSymbol))
                                     {
-                                        _ = await PlaceOrderAsync(currentSymbol, "PUT", "SELL_TO_CLOSE");
+                                        var orderPlaced = await PlaceOrderAsync(currentSymbol, false, "SELL_TO_CLOSE");
                                         Console.WriteLine("<<<<<<< SELL PUT " + currentSymbol);
+                                        if (orderPlaced)
+                                        {
+                                            putComprada = false;
+                                        }
+
                                     }
+                                }
+                            }
 
+                            if ((!squeezeInfo.InSqueeze && !squeezeInfo.inPresqueeze) && chopiness < 60)
+                            {
+                                if (!callComprada)
+                                {
+                                    if (justLeavingSqueeze && lastCrossOver <= 8)
+                                    {
+                                        if ((ema8Val > ema13Val))
+                                        {
+                                            if (rSi.Last().Rsi < 70)
+                                            {
+                                                //Get option Chain
+                                                var symbol = GetCallOptionChainAsync().GetAwaiter().GetResult();
+                                                Console.WriteLine("<<<<<<< BUY CALL" + symbol);
 
-                                    //Get option Chain
-                                    var symbol = GetCallOptionChainAsync().GetAwaiter().GetResult();
-                                    Console.WriteLine(">>>>>> BUY CALL " + symbol);
+                                                if (!string.IsNullOrWhiteSpace(symbol))
+                                                {
+                                                    var orderPlaced = await PlaceOrderAsync(symbol, true, "BUY_TO_OPEN");
+                                                    if (orderPlaced)
+                                                    {
+                                                        callComprada = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        if ((ema8Val > ema13Val)
+                                            && (ema8ValPrev <= ema13ValPrev))
+                                        {
+                                            lastCrossOver = 0;
+                                            if (rSi.Last().Rsi < 70)
+                                            {
+                                                //Get option Chain
+                                                var symbol = GetCallOptionChainAsync().GetAwaiter().GetResult();
+                                                Console.WriteLine("<<<<<<< BUY CALL" + symbol);
 
-                                    //Buy a call
-                                    //_ = await PlaceOrderAsync(symbol, "CALL", "BUY_TO_OPEN", bBandWidth);
+                                                if (!string.IsNullOrWhiteSpace(symbol))
+                                                {
+                                                    var orderPlaced = await PlaceOrderAsync(symbol, true, "BUY_TO_OPEN");
+                                                    if (orderPlaced)
+                                                    {
+                                                        callComprada = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (!putComprada)
+                                {
+                                    if (justLeavingSqueeze && lastCrossOver <= 8)
+                                    {
+                                        if ((ema8Val < ema13Val))
+                                        {
+                                            if (rSi.Last().Rsi > 45)
+                                            {
+                                                var symbol = GetPutOptionChainAsync().GetAwaiter().GetResult();
+                                                Console.WriteLine("<<<<<< BUY PUT " + symbol);
+                                                if (!string.IsNullOrWhiteSpace(symbol))
+                                                {
+                                                    var orderPlaced = await PlaceOrderAsync(symbol, false, "BUY_TO_OPEN");
+                                                    if (orderPlaced)
+                                                    {
+                                                        putComprada = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        if ((ema8Val < ema13Val)
+                                        && (ema8ValPrev >= ema13ValPrev))
+                                        {
+                                            lastCrossOver = 0;
+                                            if (rSi.Last().Rsi > 45)
+                                            {
+                                                var symbol = GetPutOptionChainAsync().GetAwaiter().GetResult();
+                                                Console.WriteLine("<<<<<< BUY PUT " + symbol);
+                                                if (!string.IsNullOrWhiteSpace(symbol))
+                                                {
+                                                    var orderPlaced = await PlaceOrderAsync(symbol, false, "BUY_TO_OPEN");
+                                                    if (orderPlaced)
+                                                    {
+                                                        putComprada = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                justLeavingSqueeze = squeezeInfo.InSqueeze;
+
+                                if (
+                                        ((ema8Val < ema13Val) && (ema8ValPrev >= ema13ValPrev))
+                                        ||
+                                        ((ema8Val > ema13Val) && (ema8ValPrev <= ema13ValPrev))
+                                    )
+                                {
+                                    lastCrossOver = 0;
+                                }
+                                else
+                                {
+                                    lastCrossOver++;
                                 }
                             }
                         }
-                        //Console.Write("null");
                     }
                     catch (Exception e)
                     {
@@ -593,7 +637,7 @@ namespace TDConsole
             {
                 var OptionChainDate = DateTime.Now.ToString("yyyy-MM-dd");
 
-                var expMonth = DateTime.Now.ToString("MMM").ToUpper().Substring(0, 3);
+                var expMonth = DateTime.Now.ToString("MMM", new CultureInfo("en-GB")).ToUpper().Substring(0, 3);
 
                 TDAuthResult authResult = JsonConvert.DeserializeObject<TDAuthResult>(cache.Load("TDAmeritradeKey"));
 
@@ -645,12 +689,17 @@ namespace TDConsole
                                 .Where(c => c.Quantity > 0);
                             return pendingOrders?.ToList();
                             break;
+                        case HttpStatusCode.Unauthorized:
+                            Console.WriteLine("Unauthorized");
+                            await SignInRefresh();
+                            break;
 
                     }
                 }
             }
             catch (Exception e)
             {
+
                 Console.WriteLine(e.ToString());
                 Console.WriteLine("No able to get options chain");
                 if (e.Message.Contains("Unauthorized"))
@@ -662,16 +711,98 @@ namespace TDConsole
             return null;
         }
 
-        private async Task<bool> PlaceOrderAsync(string symbol, string putCall, string instruction, decimal bBandValue = 1)
+        (bool inPresqueeze, bool OutPreSqueeze, bool InSqueeze) IsInSqueeze(IList<Quote> quotes)
         {
+            try
+            {
+                var price = quotes.Last().Close;
+                var length = 20;
+                var Num_Dev_Dn = -2.0;
+                var Num_Dev_up = 2.0;
+                var averageType = "SIMPLE";
+                var displace = 0;
+                var sDev = quotes.GetStdDev(20);
+                var MidLineBB = quotes.GetSma(20);
+                var LowerBandBB = MidLineBB.Last().Sma + (Num_Dev_Dn * sDev.Last().StdDev);
+                var UpperBandBB = MidLineBB.Last().Sma + (Num_Dev_up * sDev.Last().StdDev);
+                var factormid = 1.5;
+                var factorlow = 2.0;
+
+                var trueRangeAverageType = "SIMPLE";
+                var shiftMid = factormid * quotes.GetTr().GetSma(length).Last().Sma;
+                var shiftlow = factorlow * quotes.GetTr().GetSma(length).Last().Sma;
+
+                //def shifthigh = factorhigh * MovingAverage(trueRangeAverageType, TrueRange(high, close, low), length);
+                //def shiftMid = factormid * MovingAverage(trueRangeAverageType, TrueRange(high, close, low), length);
+                //def shiftlow = factorlow * MovingAverage(trueRangeAverageType, TrueRange(high, close, low), length);
+
+                var average = quotes.GetSma(20);
+
+                var LowerBandKCLow = average.Last().Sma - shiftlow;
+                var UpperBandKCLow = average.Last().Sma + shiftlow;
+
+                var UpperBandKCMid = average.Last().Sma + shiftMid;
+                var LowerBandKCMid = average.Last().Sma - shiftMid;
+
+                var originalSqueezein = LowerBandBB > LowerBandKCMid && UpperBandBB < UpperBandKCMid && LowerBandBB > prevLowerBandBB;
+                var originalSqueezeout = LowerBandBB > LowerBandKCMid && UpperBandBB < UpperBandKCMid && LowerBandBB < prevLowerBandBB;
+
+                var presqueezein = LowerBandBB > LowerBandKCLow && UpperBandBB < UpperBandKCLow && LowerBandBB > prevLowerBandBB;
+                var presqueezeout = LowerBandBB > LowerBandKCLow && UpperBandBB < UpperBandKCLow && LowerBandBB < prevLowerBandBB;
+
+                prevLowerBandBB = (double)LowerBandBB;
+
+                return (presqueezein, presqueezeout, (originalSqueezein || originalSqueezeout));
+
+                //(if ExtrSqueezein then Color.dark_red
+                //else if extrsqueezeout then color.dark_red
+                //else if originalSqueezein then Color.red
+                //else if originalSqueezeout then color.red
+                //else if presqueezein then Color.pink
+                //else if presqueezeout then color.yellow else Color.green);
+
+            }
+            catch (Exception)
+            {
+                return (true, true, true);
+            }
+        }
+
+        static double Choppiness(IList<Quote> quotes)
+        {
+            var length = 14;
+
+            var Hmax = quotes.TakeLast(length).Select(r => r.High).Max();
+
+            var Lmin = quotes.TakeLast(length).Select(r => r.Low).Min();
+
+            var hlvalue = Hmax - Lmin;
+
+            var truerange = TrueRangeCalculator(quotes);
+
+            var log = Math.Log(truerange / (double)hlvalue);
+
+            return (100 * log) / Math.Log(length);
+        }
+
+        static double TrueRangeCalculator(IList<Quote> quotes)
+        {
+            double tRange = 0;
+
+            foreach (var quote in quotes.TakeLast(14))
+            {
+                double tr = (double)Math.Max(quote.High - quote.Low, Math.Max(Math.Abs(quote.High - quote.Close), Math.Abs(quote.Low - quote.Close)));
+                tRange += tr;
+            }
+            return tRange;
+        }
+        private async Task<bool> PlaceOrderAsync(string symbol, bool buyCall, string instruction)
+        {
+            Console.WriteLine("trying to place order");
             if (instruction == "BUY_TO_OPEN" && !tradingParams.IsBuyAllowed)
             {
                 Console.WriteLine("NOT BUYING BECAUSE BUYING IS NOT ALLOWED BY CONFIG");
-                return false;
-            }
-            else if (instruction == "BUY_TO_OPEN" && tradingParams.UseBBandToBuy && ((bBandValue == 0) ? 1 : bBandValue) < tradingParams.BBandRedValue)
-            {
-                Console.WriteLine($"NOT BUYING BECAUSE OF BBAND VALUE OF {bBandValue}");
+
                 return false;
             }
             else if (instruction == "BUY_TO_OPEN" && DateTime.Now.TimeOfDay >= TimeSpan.Parse("14:50:00"))
@@ -681,7 +812,7 @@ namespace TDConsole
             }
             else if (instruction == "SELL_TO_CLOSE" && !tradingParams.IsSellAllowed)
             {
-                Console.WriteLine("NOT BUYING BECAUSE SELLING IS NOT ALLOWED BY CONFIG");
+                Console.WriteLine("NOT SELLING BECAUSE SELLING IS NOT ALLOWED BY CONFIG");
                 return false;
             }
 
@@ -702,7 +833,7 @@ namespace TDConsole
                 {
                     symbol = symbol,
                     assetType = "OPTION",
-                    putCall = putCall
+                    putCall = (buyCall) ? "CALL" : "PUT"
                 }
             });
             var callOption = new OptionPutCallData()
@@ -729,11 +860,10 @@ namespace TDConsole
                     case HttpStatusCode.Created:
                         return true;
                     default:
-                        throw (new Exception($"{res.StatusCode} {res.ReasonPhrase}"));
+                        Console.WriteLine($"{res.StatusCode} {res.ReasonPhrase}");
+                        return false;
                 }
             }
-
-            return false;
         }
 
         private async Task<string> GetLastOptionPriceAsync(string symbol)
@@ -743,31 +873,55 @@ namespace TDConsole
             {
                 var strike = symbol.Substring(symbol.Length - 3, 3) + ".0";
                 var OptionChainDate = DateTime.Now.ToString("yyyy-MM-dd");
-                var expMonth = DateTime.Now.ToString("MMM").ToUpper().Substring(0, 3);
+                var expMonth = DateTime.Now.ToString("MMM", new CultureInfo("en-GB")).ToUpper().Substring(0, 3);
 
                 TDAuthResult authResult = JsonConvert.DeserializeObject<TDAuthResult>(cache.Load("TDAmeritradeKey"));
 
                 var decoded = HttpUtility.UrlDecode(authResult.security_code);
 
-                var path = $"https://api.tdameritrade.com/v1/marketdata/chains?apikey=BGBSDP5BNDZ91JQHAOIGCXHAAIZVYU3D&symbol=SPY&contractType=PUT&strikeCount=10&includeQuotes=FALSE&strategy=SINGLE&range=ALL&fromDate={OptionChainDate}&toDate={OptionChainDate}&expMonth={expMonth}&optionType=ALL";
+                var path = string.Empty;
 
+                if (symbol.Contains("C"))
+                {
+                    path = $"https://api.tdameritrade.com/v1/marketdata/chains?apikey=BGBSDP5BNDZ91JQHAOIGCXHAAIZVYU3D&symbol=SPY&contractType=CALL&strikeCount=10&includeQuotes=FALSE&strategy=SINGLE&range=ALL&fromDate={OptionChainDate}&toDate={OptionChainDate}&expMonth={expMonth}&optionType=ALL";
+                }
+                else
+                {
+                    path = $"https://api.tdameritrade.com/v1/marketdata/chains?apikey=BGBSDP5BNDZ91JQHAOIGCXHAAIZVYU3D&symbol=SPY&contractType=PUT&strikeCount=10&includeQuotes=FALSE&strategy=SINGLE&range=ALL&fromDate={OptionChainDate}&toDate={OptionChainDate}&expMonth={expMonth}&optionType=ALL";
+                }
                 var req = new HttpRequestMessage(HttpMethod.Get, path);
 
+                var expDateMap = string.Empty;
+                if (symbol.Contains("C"))
+                {
+                    expDateMap = "callExpDateMap";
+                }
+                else
+                {
+                    expDateMap = "putExpDateMap";
+
+                }
                 req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authResult.access_token);
                 using (var client = new HttpClient())
                 {
-                    var res = await client.SendAsync(req);
-                    var OptionChainDateField = DateTime.Now.ToString("yyyy-MM-dd") + ":0";
-                    switch (res.StatusCode)
+                    try
                     {
-                        case HttpStatusCode.OK:
-                            var json = await res.Content.ReadAsStringAsync();
-                            var converter = new ExpandoObjectConverter();
-                            var jsonDom = JsonConvert.DeserializeObject<JObject>(json);
-                            if (jsonDom["status"].ToString() == "FAILED") return string.Empty;
-                            var s = jsonDom["putExpDateMap"]![OptionChainDateField]![strike];
-                            return s.First()!["mark"].ToString();
-                            break;
+                        var res = await client.SendAsync(req);
+                        var OptionChainDateField = DateTime.Now.ToString("yyyy-MM-dd") + ":0";
+                        switch (res.StatusCode)
+                        {
+                            case HttpStatusCode.OK:
+                                var json = await res.Content.ReadAsStringAsync();
+                                var converter = new ExpandoObjectConverter();
+                                var jsonDom = JsonConvert.DeserializeObject<JObject>(json);
+                                if (jsonDom["status"].ToString() == "FAILED") return string.Empty;
+                                var s = jsonDom[expDateMap]![OptionChainDateField]![strike];
+                                return s.First()!["mark"].ToString();
+                        }
+                    }
+                    catch (Exception)
+                    {
+
 
                     }
                 }
@@ -780,14 +934,15 @@ namespace TDConsole
                 {
                     await SignInRefresh();
                 }
-                throw;
             }
             return string.Empty;
         }
         private async Task<string> GetPutOptionChainAsync()
         {
+            Console.WriteLine("Getting put opt chain");
+
             var OptionChainDate = DateTime.Now.ToString("yyyy-MM-dd");
-            var expMonth = DateTime.Now.ToString("MMM").ToUpper().Substring(0, 3);
+            var expMonth = DateTime.Now.ToString("MMM", new CultureInfo("en-GB")).ToUpper().Substring(0, 3);
 
             TDAuthResult authResult = JsonConvert.DeserializeObject<TDAuthResult>(cache.Load("TDAmeritradeKey"));
 
@@ -812,7 +967,9 @@ namespace TDConsole
                         return s.First()[0]!["symbol"].ToString();
                         break;
                     default:
-                        throw (new Exception($"{res.StatusCode} {res.ReasonPhrase}"));
+                        Console.WriteLine(path);
+                        Console.WriteLine($"{res.StatusCode} {res.ReasonPhrase}");
+                        break;
                 }
             }
 
@@ -821,8 +978,9 @@ namespace TDConsole
 
         private async Task<string> GetCallOptionChainAsync()
         {
+            Console.WriteLine("Getting call opt chain");
             var OptionChainDate = DateTime.Now.ToString("yyyy-MM-dd");
-            var expMonth = DateTime.Now.ToString("MMM").ToUpper().Substring(0, 3);
+            var expMonth = DateTime.Now.ToString("MMM", new CultureInfo("en-GB")).ToUpper().Substring(0, 3);
 
             TDAuthResult authResult = JsonConvert.DeserializeObject<TDAuthResult>(cache.Load("TDAmeritradeKey"));
 
@@ -846,7 +1004,9 @@ namespace TDConsole
                         return s.First()[0]!["symbol"].ToString();
                         break;
                     default:
-                        throw (new Exception($"{res.StatusCode} {res.ReasonPhrase}"));
+                        Console.WriteLine(path);
+                        Console.WriteLine($"{res.StatusCode} {res.ReasonPhrase}");
+                        break;
                 }
             }
             return string.Empty;
@@ -913,3 +1073,81 @@ namespace TDConsole
         }
     }
 }
+
+
+//if (string.IsNullOrEmpty(putCall))
+//{
+//    var buySignal = string.Empty;
+
+//        var ema8ValPrev = decimal.Round((decimal)ema8.ToList()[ema8.ToList().Count - 2].Ema, 2);
+//        var ema13ValPrev = decimal.Round((decimal)ema13.ToList()[ema13.ToList().Count - 2].Ema, 2);
+
+//        Console.WriteLine($"Prev EMAs were EMA8 ${ema8ValPrev} EMA13 ${ema13ValPrev}");
+//        if (ema8ValPrev >= ema13ValPrev && ema13Val > ema8Val)
+//        {
+//            buySignal = "Put";
+//        }
+//        else if (ema13ValPrev >= ema8ValPrev && ema8Val > ema13Val)
+//        {
+//            buySignal = "Call";
+//        }
+
+
+//    if (buySignal == "Put")
+//    {
+//        var symbol = GetPutOptionChainAsync().GetAwaiter().GetResult();
+//        Console.WriteLine("<<<<<< BUY PUT " + symbol);
+
+//        //_ = await PlaceOrderAsync(symbol, "PUT", "BUY_TO_OPEN", bBandWidth);
+//    }
+//    else if (buySignal == "Call")
+//    {
+//        //Get option Chain
+//        var symbol = GetCallOptionChainAsync().GetAwaiter().GetResult();
+//        Console.WriteLine("<<<<<<< BUY CALL" + symbol);
+
+//        //Buy a call
+//        //_ = await PlaceOrderAsync(symbol, "CALL", "BUY_TO_OPEN", bBandWidth);
+//    }
+//}
+//else if (putCall == "Call") //If the current trade is a CALL
+//{
+//    if (ema13Val > ema8Val)
+//    {
+//        //Sell the call
+//        if (!string.IsNullOrEmpty(currentSymbol))
+//        {
+//            _ = await PlaceOrderAsync(currentSymbol, "CALL", "SELL_TO_CLOSE");
+//            Console.WriteLine("<<<<<< SELL CALL " + currentSymbol);
+//        }
+
+
+//        //Get option Chain
+//        var symbol = GetPutOptionChainAsync().GetAwaiter().GetResult();
+//        Console.WriteLine(">>>>>> BUY PUT " + symbol);
+
+//        //_ = await PlaceOrderAsync(symbol, "PUT", "BUY_TO_OPEN", bBandWidth);
+//    }
+//}
+//else if (putCall == "Put")//If the current trade is a PUT
+//{
+//    if (ema8Val > ema13Val)
+//    {
+//        //Sell the put
+//        if (!string.IsNullOrEmpty(currentSymbol))
+//        {
+//            _ = await PlaceOrderAsync(currentSymbol, "PUT", "SELL_TO_CLOSE");
+//            Console.WriteLine("<<<<<<< SELL PUT " + currentSymbol);
+//        }
+
+
+//        //Get option Chain
+//        var symbol = GetCallOptionChainAsync().GetAwaiter().GetResult();
+//        Console.WriteLine(">>>>>> BUY CALL " + symbol);
+
+//        //Buy a call
+//        //_ = await PlaceOrderAsync(symbol, "CALL", "BUY_TO_OPEN", bBandWidth);
+//    }
+//}
+//}
+//Console.Write("null");
